@@ -82,7 +82,6 @@ class My_App(QtWidgets.QMainWindow):
 			print("turned homography on")
 
 
-
 	# Source: stackoverflow.com/questions/34232632/
 	def convert_cv_to_pixmap(self, cv_img):
 		cv_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
