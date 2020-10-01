@@ -23,12 +23,13 @@ class My_App(QtWidgets.QMainWindow):
 		self._cam_fps = 2
 		self._is_cam_enabled = False
 		self._is_template_loaded = False
+		self._is_homography_on = False
 
 		# connect signal/slots
 		# when browse_button clicked, do the browse_button action
-		# the button click is the signal and the browse button is the slot
 		self.browse_button.clicked.connect(self.SLOT_browse_button)
 		self.toggle_cam_button.clicked.connect(self.SLOT_toggle_camera)
+		self.checkbox.stateChanged.connect(self.SLOT_checkbox)
 
 		# make camera object 
 		# set resolution to 320x240, low resolution
@@ -72,6 +73,15 @@ class My_App(QtWidgets.QMainWindow):
 		search_params = dict()
 		self.flann = cv2.FlannBasedMatcher(index_params, search_params)
 
+	def SLOT_checkbox(self):
+		if self.checkbox.isChecked() == False:
+			self._is_homography_on = False
+			print("turned homography off")
+		else:
+			self._is_homography_on = True
+			print("turned homography on")
+
+
 
 	# Source: stackoverflow.com/questions/34232632/
 	def convert_cv_to_pixmap(self, cv_img):
@@ -96,26 +106,29 @@ class My_App(QtWidgets.QMainWindow):
 			if m.distance < 0.6 * n.distance:
 				good_points.append(m)
 
-		img3 = cv2.drawMatches(self.image_template, self.kp_image, grayframe, kp_grayframe, good_points, grayframe)
+		if self._is_homography_on == False or len(good_points) < 10:
+			img3 = cv2.drawMatches(self.image_template, self.kp_image, grayframe, kp_grayframe, good_points, grayframe)
+			pixmap = self.convert_cv_to_pixmap(img3)
+			self.live_image_label.setPixmap(pixmap)
 
+		else:
+			# homography!
+			if len(good_points) > 10:
+				query_pts = np.float32([self.kp_image[m.queryIdx].pt for m in good_points]).reshape(-1, 1, 2)
+				train_pts = np.float32([kp_grayframe[m.trainIdx].pt for m in good_points]).reshape(-1, 1, 2)
+				matrix, mask = cv2.findHomography(query_pts, train_pts, cv2.RANSAC, 5.0)
+				matches_mask = mask.ravel().tolist()
 
-		# homography!
-		if len(good_points) > 10:
-			query_pts = np.float32([self.kp_image[m.queryIdx].pt for m in good_points]).reshape(-1, 1, 2)
-			train_pts = np.float32([kp_grayframe[m.trainIdx].pt for m in good_points]).reshape(-1, 1, 2)
-			matrix, mask = cv2.findHomography(query_pts, train_pts, cv2.RANSAC, 5.0)
-			matches_mask = mask.ravel().tolist()
+				# Perspective transform
+				h, w = (self.image_template).shape
+				pts = np.float32([[0, 0], [0, h], [w, h], [w, 0]]).reshape(-1, 1, 2)
+				dst = cv2.perspectiveTransform(pts, matrix)
 
-			# Perspective transform
-			h, w = (self.image_template).shape
-			pts = np.float32([[0, 0], [0, h], [w, h], [w, 0]]).reshape(-1, 1, 2)
-			dst = cv2.perspectiveTransform(pts, matrix)
+				homography = cv2.polylines(frame, [np.int32(dst)], True, (255, 0, 0), 3)
+				pixmap = self.convert_cv_to_pixmap(frame)
+				self.live_image_label.setPixmap(pixmap)
 
-			homography = cv2.polylines(frame, [np.int32(dst)], True, (255, 0, 0), 3)
-			cv2.imshow("Homography", homography)
-
-		pixmap = self.convert_cv_to_pixmap(img3)
-		self.live_image_label.setPixmap(pixmap)
+		
 
 	def SLOT_toggle_camera(self):
 		if self._is_cam_enabled:
